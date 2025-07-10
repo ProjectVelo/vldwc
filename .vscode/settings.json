@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "compositor.h": "c",
+        "background.h": "c"
+    }
+}

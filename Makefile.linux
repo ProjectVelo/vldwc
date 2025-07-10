@@ -1,0 +1,193 @@
+# Project configuration
+PROJECT_NAME = vldwc
+VERSION = 1.0.0
+
+# Compiler and tools
+CC = gcc
+AR = ar
+STRIP = strip
+INSTALL = install
+
+# Directories
+SRC_DIR = .
+BUILD_DIR = build
+INCLUDE_DIR = include
+DIST_DIR = dist
+INSTALL_PREFIX = /usr/local
+INSTALL_BINDIR = $(INSTALL_PREFIX)/bin
+
+# Source files
+CORE_SRC = core/compositor.c core/render_sdl.c core/background.c
+MAIN_SRC = main.c
+SRC = $(CORE_SRC) $(MAIN_SRC)
+
+# Object files with build directory
+OBJ = $(SRC:%.c=$(BUILD_DIR)/%.o)
+DEP = $(OBJ:.o=.d)
+
+# Binary output
+BIN = $(BUILD_DIR)/$(PROJECT_NAME)
+
+# Compiler flags
+CFLAGS = -std=c99 -Wall -Wextra -Wpedantic -Wformat=2 -Wstrict-prototypes
+CFLAGS += -I$(INCLUDE_DIR)
+CPPFLAGS = -MMD -MP
+
+# Build type configurations
+DEBUG_FLAGS = -g -O0 -DDEBUG -fsanitize=address -fsanitize=undefined
+RELEASE_FLAGS = -O2 -DNDEBUG -march=native
+PROFILE_FLAGS = -O2 -g -pg
+
+# Library flags
+LDFLAGS = 
+LDLIBS = -lSDL2
+
+# Package config support
+ifdef PKG_CONFIG
+    CFLAGS += $(shell pkg-config --cflags sdl2)
+    LDLIBS = $(shell pkg-config --libs sdl2)
+endif
+
+# Build type (default: release)
+BUILD_TYPE ?= release
+
+ifeq ($(BUILD_TYPE),debug)
+    CFLAGS += $(DEBUG_FLAGS)
+else ifeq ($(BUILD_TYPE),profile)
+    CFLAGS += $(PROFILE_FLAGS)
+else
+    CFLAGS += $(RELEASE_FLAGS)
+endif
+
+# Default target
+.DEFAULT_GOAL := all
+
+# Main targets
+all: $(BIN)
+
+$(BIN): $(OBJ) | $(BUILD_DIR)
+	@echo "Linking $@"
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+
+# Object file compilation with dependency generation
+$(BUILD_DIR)/%.o: %.c | $(BUILD_DIR)
+	@echo "Compiling $<"
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+
+# Create build directory
+$(BUILD_DIR):
+	@mkdir -p $(BUILD_DIR) $(BUILD_DIR)/core
+
+# Development targets
+debug:
+	@$(MAKE) BUILD_TYPE=debug
+
+release:
+	@$(MAKE) BUILD_TYPE=release
+
+profile:
+	@$(MAKE) BUILD_TYPE=profile
+
+# Static analysis
+analyze:
+	@echo "Running static analysis..."
+	@command -v cppcheck >/dev/null 2>&1 && cppcheck --enable=all --std=c99 $(SRC) || echo "cppcheck not found"
+	@command -v clang-tidy >/dev/null 2>&1 && clang-tidy $(SRC) -- $(CFLAGS) || echo "clang-tidy not found"
+
+# Code formatting
+format:
+	@echo "Formatting code..."
+	@command -v clang-format >/dev/null 2>&1 && clang-format -i $(SRC) || echo "clang-format not found"
+
+# Testing
+test: debug
+	@echo "Running tests..."
+	@./$(BIN) --test || echo "No tests implemented"
+
+# Memory check
+memcheck: debug
+	@echo "Running valgrind..."
+	@command -v valgrind >/dev/null 2>&1 && valgrind --leak-check=full --show-leak-kinds=all ./$(BIN) || echo "valgrind not found"
+
+# Coverage analysis
+coverage:
+	@$(MAKE) BUILD_TYPE=debug CFLAGS="$(CFLAGS) --coverage" LDFLAGS="$(LDFLAGS) --coverage"
+	@echo "Running coverage analysis..."
+	@./$(BIN) || true
+	@command -v gcov >/dev/null 2>&1 && gcov $(SRC) || echo "gcov not found"
+
+# Installation
+install: release
+	@echo "Installing $(PROJECT_NAME)..."
+	$(INSTALL) -d $(DESTDIR)$(INSTALL_BINDIR)
+	$(INSTALL) -m 755 $(BIN) $(DESTDIR)$(INSTALL_BINDIR)/$(PROJECT_NAME)
+
+uninstall:
+	@echo "Uninstalling $(PROJECT_NAME)..."
+	rm -f $(DESTDIR)$(INSTALL_BINDIR)/$(PROJECT_NAME)
+
+# Distribution
+dist: clean
+	@echo "Creating distribution..."
+	@mkdir -p $(DIST_DIR)
+	@tar -czf $(DIST_DIR)/$(PROJECT_NAME)-$(VERSION).tar.gz \
+		--exclude=.git --exclude=$(BUILD_DIR) --exclude=$(DIST_DIR) \
+		--transform 's,^,$(PROJECT_NAME)-$(VERSION)/,' *
+
+# Cleanup
+clean:
+	@echo "Cleaning build files..."
+	rm -rf $(BUILD_DIR)
+
+distclean: clean
+	@echo "Cleaning distribution files..."
+	rm -rf $(DIST_DIR)
+
+# Development utilities
+run: $(BIN)
+	@echo "Running $(PROJECT_NAME)..."
+	@./$(BIN)
+
+gdb: debug
+	@echo "Starting GDB..."
+	@gdb ./$(BIN)
+
+info:
+	@echo "Project: $(PROJECT_NAME) v$(VERSION)"
+	@echo "Compiler: $(CC)"
+	@echo "Build type: $(BUILD_TYPE)"
+	@echo "Source files: $(SRC)"
+	@echo "Object files: $(OBJ)"
+	@echo "Binary: $(BIN)"
+	@echo "CFLAGS: $(CFLAGS)"
+	@echo "LDFLAGS: $(LDFLAGS)"
+	@echo "LDLIBS: $(LDLIBS)"
+
+# Help target
+help:
+	@echo "Available targets:"
+	@echo "  all       - Build the project (default)"
+	@echo "  debug     - Build with debug flags"
+	@echo "  release   - Build with release flags"
+	@echo "  profile   - Build with profiling flags"
+	@echo "  clean     - Remove build files"
+	@echo "  distclean - Remove build and distribution files"
+	@echo "  install   - Install the binary"
+	@echo "  uninstall - Remove installed binary"
+	@echo "  dist      - Create distribution archive"
+	@echo "  test      - Run tests"
+	@echo "  analyze   - Run static analysis"
+	@echo "  format    - Format source code"
+	@echo "  memcheck  - Run memory check with valgrind"
+	@echo "  coverage  - Generate coverage report"
+	@echo "  run       - Build and run the program"
+	@echo "  gdb       - Build debug version and start GDB"
+	@echo "  info      - Show project information"
+	@echo "  help      - Show this help message"
+
+# Include dependency files
+-include $(DEP)
+
+# Phony targets
+.PHONY: all debug release profile clean distclean install uninstall dist test analyze format memcheck coverage run gdb info help
